@@ -95,7 +95,7 @@ def data_process(dataset_name, split_rate=0.9, user_fre_threshold = None, item_f
         social['src'] = user_encoder.transform(social['src'])
         social['dst'] = user_encoder.transform(social['dst'])
         social.to_pickle(save_dir + "/social.pkl")
-        
+
     else:
         user_encoder.fit(interact['userid'])
         interact['userid'] = user_encoder.transform(interact['userid'])
@@ -105,9 +105,9 @@ def data_process(dataset_name, split_rate=0.9, user_fre_threshold = None, item_f
     interact['itemid'] = item_encoder.fit_transform(interact['itemid'])
 
     user_encoder_map = pd.DataFrame(
-        {'encoded': range(len(user_encoder.classes_)), 'user': user_encoder.classes_})    
+        {'encoded': range(len(user_encoder.classes_)), 'user': user_encoder.classes_})
     user_encoder_map.to_csv(save_dir + '/user_encoder_map.csv', index=False)
-    
+
     try:
         user_feature = pd.read_pickle(save_dir + '/user_feature.pkl')
         user_feature = pd.merge(user_encoder_map,user_feature,how='left',on='user')

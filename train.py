@@ -24,7 +24,7 @@ import metric
 import argparse
 
 
-def get_config():
+def get_config() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name", type=str, default='book_crossing')
     parser.add_argument("--social_data", type=bool, default=False)
@@ -40,7 +40,7 @@ def get_config():
     parser.add_argument("--loadFilename", type=str, default=None)
 
     parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--epoch", type=int, default=300)
+    parser.add_argument("--epoch", type=int, default=100)
 
     parser.add_argument("--embedding_size", type=int, default=8)
     parser.add_argument("--id_embedding_size", type=int, default=64)
@@ -61,10 +61,11 @@ def get_config():
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--weight_decay", type=float, default=0.01)
 
-
     parser.add_argument("--K_list", type=int, nargs='+', default=[10, 20, 50])
+    parser.add_argument("--ssl_temp", type=float, default=1, help="Teperature in softmax")
 
     opt = parser.parse_args()
+    print(type(opt))
 
     return opt
 
@@ -77,8 +78,22 @@ def my_collate_train(batch):
     user_id = torch.LongTensor(user_id)
     pos_item = torch.LongTensor(pos_item)
     neg_item = torch.LongTensor(neg_item)
+    # print("train batch shape:", user_id.shape, pos_item.shape, neg_item.shape)
 
     return [user_id, pos_item, neg_item]
+
+
+def my_collate_test(batch):
+    user_id = [item[0] for item in batch]
+    test_item = [item[1] for item in batch]
+    # print("test item shape:", test_item[0].shape)
+
+    user_id = torch.LongTensor(user_id)
+    # test_item = torch.LongTensor(test_item)
+    test_item = torch.stack(test_item)
+
+    # print("test batch shape:", user_id.shape, test_item.shape)
+    return [user_id, test_item]
 
 
 def collate_test_i2i(batch):
@@ -88,18 +103,17 @@ def collate_test_i2i(batch):
     item1 = torch.LongTensor(item1)
     item2 = torch.LongTensor(item2)
 
-
     return [item1, item2]
 
 
 
-def one_train(Data, opt):
+def one_train(Data: load_data.Data, opt: argparse.Namespace):
     print(opt)
     print('Building dataloader >>>>>>>>>>>>>>>>>>>')
 
     test_dataset = Data.test_dataset
-    # test_loader = DataLoader(test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_test)
-    test_loader = DataLoader(test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_train)
+    test_loader = DataLoader(test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_test)
+    # test_loader = DataLoader(test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_train)
 
     device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
@@ -192,15 +206,18 @@ def one_train(Data, opt):
                 optimizer.step()
                 pbar.update(1)
 
-
-    torch.save({
+    last_checkpoint = {
         'sd': model.state_dict(),
         'opt':opt,
-    }, 'model.tar')
+    }
+    torch.save(last_checkpoint, 'model.tar')
 
+# def one_test(Data, opt):
+#     last_checkpoint = torch.load("model.tar")
     # remove the historical interaction in the prediction
     model = Model(Data, opt, device)
-    model.load_state_dict(best_checkpoint['sd'])
+    # model.load_state_dict(best_checkpoint['sd'])
+    model.load_state_dict(last_checkpoint['sd'])
     model = model.to(device)
     model.eval()
     user_historical_mask = Data.user_historical_mask.to(device)
@@ -244,21 +261,21 @@ def one_train(Data, opt):
     print(opt)
     print(model.name)
     for K in opt.K_list:
-        print("NDCG@{}: {}".format(K, np.mean(NDCG[K])))
-        print("RECALL@{}: {}".format(K, np.mean(RECALL[K])))
-        print("MRR@{}: {}".format(K, np.mean(MRR[K])))
+        print("NDCG@{}: {:.5f}".format(K, np.mean(NDCG[K])))
+        print("RECALL@{}: {:.5f}".format(K, np.mean(RECALL[K])))
+        print("MRR@{}: {:.5f}".format(K, np.mean(MRR[K])))
         print('\r\r')
-        print("head_NDCG@{}: {}".format(K, np.mean(head_NDCG[K])))
-        print("head_RECALL@{}: {}".format(K, np.mean(head_RECALL[K])))
+        print("head_NDCG@{}: {:.5f}".format(K, np.mean(head_NDCG[K])))
+        print("head_RECALL@{}: {:.5f}".format(K, np.mean(head_RECALL[K])))
         print('\r\r')
-        print("tail_NDCG@{}: {}".format(K, np.mean(tail_NDCG[K])))
-        print("tail_RECALL@{}: {}".format(K, np.mean(tail_RECALL[K])))
+        print("tail_NDCG@{}: {:.5f}".format(K, np.mean(tail_NDCG[K])))
+        print("tail_RECALL@{}: {:.5f}".format(K, np.mean(tail_RECALL[K])))
         print('\r\r')
-        print("body_NDCG@{}: {}".format(K, np.mean(body_NDCG[K])))
-        print("body_RECALL@{}: {}".format(K, np.mean(body_RECALL[K])))
+        print("body_NDCG@{}: {:.5f}".format(K, np.mean(body_NDCG[K])))
+        print("body_RECALL@{}: {:.5f}".format(K, np.mean(body_RECALL[K])))
 
 
-opt = get_config()
+opt: argparse.Namespace = get_config()
 interact_train, interact_test, social, user_num, item_num, user_feature, item_feature = load_data.data_load(opt.dataset_name, social_data=opt.social_data, test_dataset= True, bottom=opt.implcit_bottom)
-Data = load_data.Data(interact_train, interact_test, social, user_num, item_num, user_feature, item_feature)
-one_train(Data, opt)
+data = load_data.Data(interact_train, interact_test, social, user_num, item_num, user_feature, item_feature)
+one_train(data, opt)

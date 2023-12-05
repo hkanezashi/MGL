@@ -13,6 +13,9 @@ import random
 
 
 def sigmoid(x, k):
+    """Variant sigmoid function to formulate popularity
+    See equation 11 in the origihal MGL paper
+    """
     s = 1 - (k / (k + np.exp(x/k)))
     return s
 
@@ -86,6 +89,9 @@ class Generator(nn.Module):
         return batch_item_feature_embedded
 
 class Model(nn.Module):
+    """MGL Model
+    """
+
     def __init__(self, Data, opt, device):
         super(Model, self).__init__()
 
@@ -120,6 +126,7 @@ class Model(nn.Module):
 
         self.top_rate = opt.top_rate
         self.convergence = opt.convergence
+        self.ssl_temp = opt.ssl_temp  # temperature in softmax
 
     def create_sparse_adjacency(self):
         index = [self.interact_train['userid'].tolist(), self.interact_train['itemid'].tolist()]
@@ -141,7 +148,7 @@ class Model(nn.Module):
         degree = torch.pow(degree, -1)
         degree[torch.isinf(degree)] = 0
 
-        self.joint_adjacency_matrix = joint_adjacency_matrix.to(self.device)
+        self.joint_adjacency_matrix = joint_adjacency_matrix.to(self.device)  # 12493, 12493
 
         joint_adjacency_matrix_normal_value = degree[row_indices] * joint_adjacency_matrix_value
         self.joint_adjacency_matrix_normal_spatial = torch.sparse_coo_tensor(torch.stack([row_indices, col_indices], dim=0), joint_adjacency_matrix_normal_value,
@@ -183,7 +190,6 @@ class Model(nn.Module):
         return row_index, colomn_index, joint_enhanced_value
 
 
-
     def i2i(self, item1, item2):
 
         mse_loss = nn.MSELoss()
@@ -205,19 +211,18 @@ class Model(nn.Module):
         return loss
 
 
-
     def reg(self, pos_item):
+        """Compute popularity-aware contrasctive loss
+        See equation 10 in the origihal MGL paper
+        """
         pos_item_encoded = self.generator.encode(pos_item)
         pos_item_decoded = self.generator.decode(pos_item_encoded)
 
         pos_item_degree = self.item_degree_numpy[pos_item.cpu().numpy()]
-        probs = sigmoid(pos_item_degree, self.convergence)
-
+        probs = torch.from_numpy(sigmoid(pos_item_degree, self.convergence))  # Apply a variant sigmoid function to formulate popularity (equation 11)
 
         def ssl_compute(normalized_embedded_s1, normalized_embedded_s2, probs):
-            # batch_size
-            pos_score = torch.sum(torch.mul(normalized_embedded_s1, normalized_embedded_s2), dim=1, keepdim=False)
-            # batch_size * batch_size
+            pos_score = torch.sum(torch.mul(normalized_embedded_s1, normalized_embedded_s2), dim=1, keepdim=False)  # similarity between item embeddings
             all_score = torch.mm(normalized_embedded_s1, normalized_embedded_s2.t())
             ssl_mi = (probs * torch.log(torch.exp(pos_score/self.ssl_temp) / torch.exp(all_score/self.ssl_temp).sum(dim=1, keepdim=False))).mean()
             return ssl_mi
@@ -336,7 +341,7 @@ class Model(nn.Module):
         return score
 
     def compute_embeddings(self):
-        cur_embedding = torch.cat([self.item_id_Embeddings.weight, self.item_id_Embeddings.weight], dim=0)
+        cur_embedding = torch.cat([self.user_id_Embeddings.weight, self.item_id_Embeddings.weight], dim=0)
         all_embeddings = [cur_embedding]
 
         for i in range(self.L):
