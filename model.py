@@ -4,7 +4,6 @@ from torch import optim
 import torch.nn.functional as functional
 import torch.nn.init as init
 import numpy as np
-# from util import load_data
 from collections import defaultdict
 import pandas as pd
 from copy import deepcopy
@@ -219,7 +218,7 @@ class Model(nn.Module):
         pos_item_decoded = self.generator.decode(pos_item_encoded)
 
         pos_item_degree = self.item_degree_numpy[pos_item.cpu().numpy()]
-        probs = torch.from_numpy(sigmoid(pos_item_degree, self.convergence))  # Apply a variant sigmoid function to formulate popularity (equation 11)
+        probs = torch.from_numpy(sigmoid(pos_item_degree, self.convergence)).to(self.device)  # Apply a variant sigmoid function to formulate popularity (equation 11)
 
         def ssl_compute(normalized_embedded_s1, normalized_embedded_s2, probs):
             pos_score = torch.sum(torch.mul(normalized_embedded_s1, normalized_embedded_s2), dim=1, keepdim=False)  # similarity between item embeddings

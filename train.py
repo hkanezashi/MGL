@@ -1,27 +1,14 @@
 import torch
-# import torch.nn as nn
 from torch import optim
-# import torch.nn.functional as functional
-# from torch.utils.data.dataset import Dataset
 from torch.utils.data import DataLoader
-
+from tqdm import tqdm
 import numpy as np
 from collections import defaultdict
+import argparse
 
 from model import Model
-
 import load_data
-
-# import os
-# import time
-# import shutil
-from tqdm import tqdm
-# from multiprocessing import Pool, cpu_count
-# from functools import partial
-# from copy import deepcopy
-# import pandas as pd
 import metric
-import argparse
 
 
 def get_config() -> argparse.Namespace:
@@ -78,7 +65,6 @@ def my_collate_train(batch):
     user_id = torch.LongTensor(user_id)
     pos_item = torch.LongTensor(pos_item)
     neg_item = torch.LongTensor(neg_item)
-    # print("train batch shape:", user_id.shape, pos_item.shape, neg_item.shape)
 
     return [user_id, pos_item, neg_item]
 
@@ -113,7 +99,6 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
 
     test_dataset = Data.test_dataset
     test_loader = DataLoader(test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_test)
-    # test_loader = DataLoader(test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_train)
 
     device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
