@@ -116,14 +116,12 @@ class Model(nn.Module):
         _, item_degree_list = zip(*sorted_item_degrees)
         self.item_degree_numpy = np.array(item_degree_list)
 
-        self.create_sparse_adjaceny()
+        self.create_sparse_adjacency()
 
         self.top_rate = opt.top_rate
         self.convergence = opt.convergence
 
-
-
-    def create_sparse_adjaceny(self):
+    def create_sparse_adjacency(self):
         index = [self.interact_train['userid'].tolist(), self.interact_train['itemid'].tolist()]
         value = [1.0] * len(self.interact_train)
 
@@ -132,21 +130,22 @@ class Model(nn.Module):
         tmp_index = [self.interact_train['userid'].tolist(), (self.interact_train['itemid'] + self.user_num).tolist()]
         tmp_adj = torch.sparse_coo_tensor(tmp_index, value, (self.user_num+self.item_num, self.user_num+self.item_num))
 
-        joint_adjaceny_matrix = (tmp_adj + tmp_adj.t()).coalesce()
+        joint_adjacency_matrix = (tmp_adj + tmp_adj.t()).coalesce()
 
-        row_indices = joint_adjaceny_matrix.indices()[0]
-        col_indices = joint_adjaceny_matrix.indices()[1]
-        joint_adjaceny_matrix_value = joint_adjaceny_matrix.values()
+        row_indices = joint_adjacency_matrix.indices()[0]
+        col_indices = joint_adjacency_matrix.indices()[1]
+        joint_adjacency_matrix_value = joint_adjacency_matrix.values()
 
 
-        degree = torch.sparse.sum(joint_adjaceny_matrix, dim=1).to_dense()
+        degree = torch.sparse.sum(joint_adjacency_matrix, dim=1).to_dense()
         degree = torch.pow(degree, -1)
         degree[torch.isinf(degree)] = 0
 
-        self.joint_adjaceny_matrix = joint_adjaceny_matrix.to(self.device)
+        self.joint_adjacency_matrix = joint_adjacency_matrix.to(self.device)
 
-        joint_adjaceny_matrix_normal_value = degree[row_indices] * joint_adjaceny_matrix_value
-        self.joint_adjaceny_matrix_normal_spatial = torch.sparse_coo_tensor(torch.stack([row_indices, col_indices], dim=0), joint_adjaceny_matrix_normal_value, (self.user_num+self.item_num, self.user_num+self.item_num)).to(self.device)
+        joint_adjacency_matrix_normal_value = degree[row_indices] * joint_adjacency_matrix_value
+        self.joint_adjacency_matrix_normal_spatial = torch.sparse_coo_tensor(torch.stack([row_indices, col_indices], dim=0), joint_adjacency_matrix_normal_value,
+                                                                            (self.user_num+self.item_num, self.user_num+self.item_num)).to(self.device)
 
     def link_predict(self, itemDegrees, top_rate):
 
@@ -286,7 +285,7 @@ class Model(nn.Module):
         enhance_weight = torch.cat([torch.zeros(self.user_num), enhance_weight], dim=-1).to(self.device).float()
 
         for i in range(self.L):
-            cur_embedding_ori = torch.mm(self.joint_adjaceny_matrix_normal_spatial, cur_embedding)
+            cur_embedding_ori = torch.mm(self.joint_adjacency_matrix_normal_spatial, cur_embedding)
             cur_embedding_enhanced = torch_sparse.spmm(indice, joint_enhanced_value, self.user_num + self.item_num, self.user_num + self.item_num, cur_embedding)
             cur_embedding = cur_embedding_ori + enhance_weight.unsqueeze(-1) * cur_embedding_enhanced
             all_embeddings.append(cur_embedding)
@@ -319,7 +318,7 @@ class Model(nn.Module):
         enhance_weight = torch.cat([torch.zeros(self.user_num), enhance_weight], dim=-1).to(self.device).float()
 
         for i in range(self.L):
-            cur_embedding_ori = torch.mm(self.joint_adjaceny_matrix_normal_spatial, cur_embedding)
+            cur_embedding_ori = torch.mm(self.joint_adjacency_matrix_normal_spatial, cur_embedding)
             cur_embedding_enhanced = torch_sparse.spmm(indice, joint_enhanced_value, self.user_num + self.item_num, self.user_num + self.item_num, cur_embedding)
             cur_embedding = cur_embedding_ori + enhance_weight.unsqueeze(-1) * cur_embedding_enhanced
             all_embeddings.append(cur_embedding)
@@ -341,8 +340,8 @@ class Model(nn.Module):
         all_embeddings = [cur_embedding]
 
         for i in range(self.L):
-            # cur_embedding = torch.mm(self.joint_adjaceny_matrix_normal, cur_embedding)
-            cur_embedding = torch.mm(self.joint_adjaceny_matrix_normal_spatial, cur_embedding)
+            # cur_embedding = torch.mm(self.joint_adjacency_matrix_normal, cur_embedding)
+            cur_embedding = torch.mm(self.joint_adjacency_matrix_normal_spatial, cur_embedding)
             all_embeddings.append(cur_embedding)
 
         all_embeddings = torch.stack(all_embeddings, dim=0)

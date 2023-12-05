@@ -4,3 +4,4 @@ rectorch
 scikit_learn
 torch
 tqdm
+ipykernel
