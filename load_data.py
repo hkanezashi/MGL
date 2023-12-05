@@ -1,9 +1,9 @@
 import torch
-import torch.nn as nn
-from torch import optim
-import torch.nn.functional as functional
+# import torch.nn as nn
+# from torch import optim
+# import torch.nn.functional as functional
 from torch.utils.data.dataset import Dataset
-from torch.utils.data import DataLoader
+# from torch.utils.data import DataLoader
 
 from collections import defaultdict
 import numpy as np
@@ -11,13 +11,13 @@ import pandas as pd
 from random import choice
 
 import os
-from multiprocessing import Pool, cpu_count
-from functools import partial
-from copy import deepcopy
+# from multiprocessing import Pool, cpu_count
+# from functools import partial
+# from copy import deepcopy
 
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import KFold
+# from sklearn.model_selection import train_test_split
+# from sklearn.model_selection import KFold
 
 
 
@@ -56,10 +56,6 @@ def data_load(dataset_name, social_data= False, test_dataset= True, bottom=0, cv
             interact_test = interact_test[interact_test['score'] > bottom]
 
         return interact_train, interact_test, social, user_num, item_num, user_feature, item_feature
-
-
-
-    
 
 
 class Data(object):
@@ -106,11 +102,9 @@ class Data(object):
             item_list = list(self.trainSet_u[uuu].keys())
             if len(item_list) != 0:
                 user_historical_mask[uuu, item_list] = 0
-        
 
         self.user_historical_mask = torch.from_numpy(user_historical_mask)
 
-        
 
     def __generateSet(self):
         for row in self.interact_train.itertuples(index=False):
@@ -217,13 +211,9 @@ class Data(object):
                 feature_dim = len(encoder.classes_)
                 self.item_feature_list.append({'feature_name':f, 'feature_dim':feature_dim})
 
-
         self.item_feature_list.append({'feature_name':'encoded', 'feature_dim':self.item_num})
 
-
         self.item_feature_matrix = torch.from_numpy(self.item_feature[[f['feature_name'] for f in self.item_feature_list]].values)
-
-
 
 
 class Train_dataset(Dataset):
@@ -246,8 +236,6 @@ class Train_dataset(Dataset):
             neg_item = choice(self.item_list)
 
         return user, pos_item, neg_item
-
-    
 
 
 class Test_dataset_one_plus_all(Dataset):

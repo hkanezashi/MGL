@@ -1,27 +1,27 @@
 import torch
-import torch.nn as nn
+# import torch.nn as nn
 from torch import optim
-import torch.nn.functional as functional
-from torch.utils.data.dataset import Dataset
+# import torch.nn.functional as functional
+# from torch.utils.data.dataset import Dataset
 from torch.utils.data import DataLoader
 
 import numpy as np
 from collections import defaultdict
 
-from models import Model
+from model import Model
 
 import load_data
 
-import os
-import time
-import shutil
+# import os
+# import time
+# import shutil
 from tqdm import tqdm
-from multiprocessing import Pool, cpu_count
-from functools import partial
-from copy import deepcopy
-import pandas as pd
+# from multiprocessing import Pool, cpu_count
+# from functools import partial
+# from copy import deepcopy
+# import pandas as pd
 import metric
-
+import argparse
 
 
 def get_config():
@@ -47,7 +47,7 @@ def get_config():
     parser.add_argument("--dense_embedding_dim", type=int, default=16)
 
     parser.add_argument("--L", type=int, default=3)
-    
+
     parser.add_argument("--link_topk", type=int, default=10)
 
     parser.add_argument("--reg_lambda", type=float, default=0.02)
@@ -65,10 +65,8 @@ def get_config():
     parser.add_argument("--K_list", type=int, nargs='+', default=[10, 20, 50])
 
     opt = parser.parse_args()
-    
-    return opt
 
-cuda_device = '4'
+    return opt
 
 
 def my_collate_train(batch):
@@ -100,10 +98,11 @@ def one_train(Data, opt):
     print('Building dataloader >>>>>>>>>>>>>>>>>>>')
 
     test_dataset = Data.test_dataset
-    test_loader = DataLoader(
-        test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_test)
+    # test_loader = DataLoader(test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_test)
+    test_loader = DataLoader(test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_train)
 
-    device = torch.device("cuda:{0}".format(cuda_device))
+    device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = torch.device(device_name)
 
     print(device)
     index = [Data.interact_train['userid'].tolist(), Data.interact_train['itemid'].tolist()]
@@ -120,15 +119,15 @@ def one_train(Data, opt):
         A_values = torch.where(A_values > 1, A_values.new_ones(A_values.shape), A_values)
         return torch.sparse_coo_tensor(A_indices, A_values, A.shape).to(A.device)
 
-    
     i2i = sparse_where(i2i)
 
     def get_0_1_array(item_num,rate=0.2):
         zeros_num = int(item_num * rate)
         new_array = np.ones(item_num * item_num)
-        new_array[:zeros_num] = 0 
+        new_array[:zeros_num] = 0
         np.random.shuffle(new_array)
-        re_array = new_array.reshape(item_num * item_num)
+        # re_array = new_array.reshape(item_num * item_num)
+        re_array = new_array.reshape(item_num, item_num)  # 2D-matrix
         re_array = torch.from_numpy(re_array).to_sparse().to(device)
         return re_array
 
@@ -152,7 +151,7 @@ def one_train(Data, opt):
 
     print('Start training...')
     start_epoch = 0
-    directory = directory_name_generate(model, opt, "no early stop")
+    # directory = directory_name_generate(model, opt, "no early stop")
     model = model.to(device)
 
     support_loader = DataLoader(i2i_pair, shuffle=True, batch_size=opt.batch_size, collate_fn=collate_test_i2i)
@@ -166,7 +165,7 @@ def one_train(Data, opt):
 
         with tqdm(total=len(train_loader), desc="epoch"+str(epoch)) as pbar:
             for index, (user_id, pos_item, neg_item) in enumerate(train_loader):
-                
+
                 user_id = user_id.to(device)
                 pos_item = pos_item.to(device)
                 neg_item = neg_item.to(device)
@@ -232,7 +231,7 @@ def one_train(Data, opt):
                 NDCG[K].append(ndcg)
                 RECALL[K].append(recall)
                 MRR[K].append(mrr)
-            
+
                 head_NDCG[K].append(head_ndcg)
                 head_RECALL[K].append(head_recall)
                 tail_NDCG[K].append(tail_ndcg)
@@ -257,16 +256,9 @@ def one_train(Data, opt):
         print('\r\r')
         print("body_NDCG@{}: {}".format(K, np.mean(body_NDCG[K])))
         print("body_RECALL@{}: {}".format(K, np.mean(body_RECALL[K])))
-    
+
 
 opt = get_config()
 interact_train, interact_test, social, user_num, item_num, user_feature, item_feature = load_data.data_load(opt.dataset_name, social_data=opt.social_data, test_dataset= True, bottom=opt.implcit_bottom)
 Data = load_data.Data(interact_train, interact_test, social, user_num, item_num, user_feature, item_feature)
 one_train(Data, opt)
-
-
-
-
-
-
-

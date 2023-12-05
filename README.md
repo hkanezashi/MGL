@@ -6,15 +6,19 @@ This repository is the official implementation of MGL.
 
 To install requirements:
 
-```setup
-conda env create -f environment.yaml
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
+
+Then, instrall `pytorch_sparse` following the documentation: [rusty1s/pytorch\_sparse: PyTorch Extension Library of Optimized Autograd Sparse Matrix Operations](https://github.com/rusty1s/pytorch_sparse)
 
 ## Data Process
 
 To prepare the data for the model training:
 
-```setup
+```bash
 python data_process.py
 ```
 
@@ -22,9 +26,8 @@ python data_process.py
 
 To train the model(s) in the paper:
 
-```setup
+```bash
 python train.py
 ```
+
 > Output: the file "model.tar"
-
-

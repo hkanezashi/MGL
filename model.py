@@ -4,7 +4,7 @@ from torch import optim
 import torch.nn.functional as functional
 import torch.nn.init as init
 import numpy as np
-from util import load_data
+# from util import load_data
 from collections import defaultdict
 import pandas as pd
 from copy import deepcopy
@@ -109,7 +109,7 @@ class Model(nn.Module):
         self.L = opt.L
         self.link_topk = opt.link_topk
 
-        self.userDegrees = Data.userDegrees 
+        self.userDegrees = Data.userDegrees
         self.itemDegrees = Data.itemDegrees
 
         sorted_item_degrees = sorted(self.itemDegrees.items(), key=lambda x: x[0])
@@ -131,7 +131,7 @@ class Model(nn.Module):
 
         tmp_index = [self.interact_train['userid'].tolist(), (self.interact_train['itemid'] + self.user_num).tolist()]
         tmp_adj = torch.sparse_coo_tensor(tmp_index, value, (self.user_num+self.item_num, self.user_num+self.item_num))
-        
+
         joint_adjaceny_matrix = (tmp_adj + tmp_adj.t()).coalesce()
 
         row_indices = joint_adjaceny_matrix.indices()[0]
@@ -147,7 +147,6 @@ class Model(nn.Module):
 
         joint_adjaceny_matrix_normal_value = degree[row_indices] * joint_adjaceny_matrix_value
         self.joint_adjaceny_matrix_normal_spatial = torch.sparse_coo_tensor(torch.stack([row_indices, col_indices], dim=0), joint_adjaceny_matrix_normal_value, (self.user_num+self.item_num, self.user_num+self.item_num)).to(self.device)
-        
 
     def link_predict(self, itemDegrees, top_rate):
 
@@ -161,7 +160,7 @@ class Model(nn.Module):
 
         top_item_embedded = self.generator.encode(item_top)
         tail_item_embedded = self.generator.encode(item_tail)
-        
+
         i2i_score = torch.mm(tail_item_embedded, top_item_embedded.permute(1, 0))
 
         i2i_score_masked, indices = i2i_score.topk(self.link_topk, dim= -1)
@@ -181,7 +180,7 @@ class Model(nn.Module):
         row_index = (tail_item_index+self.user_num).unsqueeze(0)
         colomn_index = (top_item_index+self.user_num).unsqueeze(0)
         joint_enhanced_value = enhanced_value * tail_item_degree
-        
+
         return row_index, colomn_index, joint_enhanced_value
 
 
@@ -254,7 +253,6 @@ class Model(nn.Module):
         tail_item_hidden = torch.mm(tail_item_feature, encoder_0_weight.t()) + encoder_0_bias
         tail_item_embedded = torch.mm(tail_item_hidden, encoder_2_weight.t()) + encoder_2_bias
 
-        
         i2i_score = torch.mm(tail_item_embedded, top_item_embedded.permute(1, 0))
 
         i2i_score_masked, indices = i2i_score.topk(self.link_topk, dim= -1)
@@ -273,7 +271,7 @@ class Model(nn.Module):
         row_index = (tail_item_index+self.user_num).unsqueeze(0)
         colomn_index = (top_item_index+self.user_num).unsqueeze(0)
         joint_enhanced_value = enhanced_value * tail_item_degree
-        
+
         return row_index, colomn_index, joint_enhanced_value
 
 
@@ -304,7 +302,7 @@ class Model(nn.Module):
         neg_score = torch.mul(user_embedded, neg_item_embedded).sum(dim=-1, keepdim=False)
 
         rec_loss = -(pos_score - neg_score).sigmoid().log().mean()
-        
+
         return rec_loss
 
 
@@ -339,14 +337,14 @@ class Model(nn.Module):
         return score
 
     def compute_embeddings(self):
-        cur_embedding = torch.cat([self.user_id_Embedding.weight, self.item_id_Embeddings.weight], dim=0)
+        cur_embedding = torch.cat([self.item_id_Embeddings.weight, self.item_id_Embeddings.weight], dim=0)
         all_embeddings = [cur_embedding]
 
         for i in range(self.L):
-            
-            cur_embedding = torch.mm(self.joint_adjaceny_matrix_normal, cur_embedding)
+            # cur_embedding = torch.mm(self.joint_adjaceny_matrix_normal, cur_embedding)
+            cur_embedding = torch.mm(self.joint_adjaceny_matrix_normal_spatial, cur_embedding)
             all_embeddings.append(cur_embedding)
-        
+
         all_embeddings = torch.stack(all_embeddings, dim=0)
         all_embeddings = torch.mean(all_embeddings, dim=0, keepdim=False)
         user_embeddings, item_embeddings = torch.split(all_embeddings, [self.user_num,self.item_num])
