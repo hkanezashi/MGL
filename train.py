@@ -46,7 +46,6 @@ def get_config() -> argparse.Namespace:
     parser.add_argument("--local_lr", type=float, default=0.01)
     parser.add_argument("--beta", type=float, default=0.1)
 
-
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--weight_decay", type=float, default=0.01)
 

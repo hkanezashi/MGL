@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch import optim
 import torch.nn.functional as functional
 import torch.nn.init as init
+from torch.autograd import detect_anomaly
 import numpy as np
 from collections import defaultdict
 import pandas as pd
@@ -167,7 +168,7 @@ class Model(nn.Module):
 
         self.top_rate = opt.top_rate
         self.convergence = opt.convergence
-        self.ssl_temp = opt.ssl_temp  # temperature in softmax
+        self.ssl_temp = torch.FloatTensor([opt.ssl_temp]).to(self.device)  # temperature in softmax
 
     def create_sparse_adjacency(self):
         index = [self.interact_train['userid'].tolist(), self.interact_train['itemid'].tolist()]
@@ -272,9 +273,33 @@ class Model(nn.Module):
         probs = torch.from_numpy(sigmoid(pos_item_degree, self.convergence)).to(self.device)  # Apply a variant sigmoid function to formulate popularity (equation 11)
 
         def ssl_compute(normalized_embedded_s1, normalized_embedded_s2, probs):
+            debug = False
+
+            if debug:
+                print("emb1:", torch.max(normalized_embedded_s1), torch.min(normalized_embedded_s1))
+                print("emb2:", torch.max(normalized_embedded_s2), torch.min(normalized_embedded_s2))
+
             pos_score = torch.sum(torch.mul(normalized_embedded_s1, normalized_embedded_s2), dim=1, keepdim=False)  # similarity between item embeddings
+            # with detect_anomaly():
             all_score = torch.mm(normalized_embedded_s1, normalized_embedded_s2.t())
-            ssl_mi = (probs * torch.log(torch.exp(pos_score/self.ssl_temp) / torch.exp(all_score/self.ssl_temp).sum(dim=1, keepdim=False))).mean()
+            ## Normalize input scores to avoid overflow/underflow of torch.exp results
+            min_score = torch.min(all_score, dim=1, keepdim=True)[0]
+            max_score = torch.max(all_score, dim=1, keepdim=True)[0]
+            scaling_factor = max_score - min_score
+            norm_all_score = (all_score - min_score) / scaling_factor
+            norm_pos_score = (pos_score - min_score.squeeze()) / scaling_factor.squeeze()
+
+            # ssl_mi = (probs * torch.log(torch.exp(pos_score/self.ssl_temp) / torch.exp(adj_score/self.ssl_temp).sum(dim=1, keepdim=False))).mean()
+            ssl_mi = (probs * torch.log(torch.exp(norm_pos_score/self.ssl_temp) / torch.exp(norm_all_score/self.ssl_temp).sum(dim=1, keepdim=False))).mean()
+            if debug:
+                print("pos_score:", torch.max(pos_score), torch.min(pos_score))
+                print("all_score:", torch.max(max_score), torch.min(min_score))
+                print("norm_pos_score:", torch.max(norm_pos_score), torch.min(norm_pos_score))
+                print("ssl_mi:", ssl_mi)
+            # ssl_mi = (probs * torch.log(torch.exp(pos_score) / torch.exp(all_score).sum(dim=1, keepdim=False))).mean()
+            # print(torch.isinf(pos_score).any(), torch.isinf(all_score).any(), ssl_mi)
+            # print(torch.isnan(pos_score).any(), torch.isnan(all_score).any())
+            # print(pos_score, all_score, ssl_mi)
             return ssl_mi
 
         user_embeddings, item_embeddings = self.compute_embeddings()
