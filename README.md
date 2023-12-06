@@ -12,6 +12,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+If you want CUDA support, please follow the instruction of PyTorch documentation: [Start Locally \| PyTorch](https://pytorch.org/get-started/locally/)
+
 After installing the above requirements, please install pytorch_sparse by following the documentation provided here: [rusty1s/pytorch_sparse](https://github.com/rusty1s/pytorch_sparse). This library is essential for optimized autograd sparse matrix operations used in MGL.
 
 Example:
