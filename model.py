@@ -66,17 +66,8 @@ class Generator(nn.Module):
 
 
     def encode(self, item_id):
-        # if isnan(item_id).numel() > 0:
-        #     print("nan detected: item_id")
-
         batch_item_feature_embedded = self.embed_feature(item_id)
-        # if isnan(batch_item_feature_embedded).numel() > 0:
-        #     print("nan detected: batch_item_feature_embedded")
-
         batch_item_feature_encoded = self.encoder(batch_item_feature_embedded)
-        # if isnan(batch_item_feature_encoded).numel() > 0:
-        #     print("nan detected: batch_item_feature_encoded")
-
         return batch_item_feature_encoded
 
     def decode(self, batch_item_feature_encoded):
@@ -90,26 +81,9 @@ class Generator(nn.Module):
         for i, f in enumerate(self.item_feature_list):
             embedding_layer = self.item_Embeddings[i]
             batch_item_feature_i = batch_item_feature[:, i]
-            # if isnan(batch_item_feature_i, "batch_item_feature_i").numel() > 0:
-            #     print("nan at", i)
-
             weight = embedding_layer.weight
-            # if isnan(weight, "embedding weight").numel() > 0:
-            #     nan_indices = torch.where(torch.isnan(weight))
-            #     print(nan_indices)
 
             batch_item_feature_i_embedded = embedding_layer(batch_item_feature_i)
-            # nan_indices = isnan(batch_item_feature_i_embedded, "batch_item_feature_i_embedded")
-            # if nan_indices.numel() > 0:
-            #     print("values:", batch_item_feature_i_embedded)
-            #     print("item id:", item_id)
-            #     print("nan at", i)
-            #     print("feats:", batch_item_feature[nan_indices])
-            #     print(self.item_Embeddings)
-
-            #     print(weight.isnan())
-            #     nan_indices = torch.where(torch.isnan(weight))
-            #     print(nan_indices)
             batch_item_feature_embedded.append(batch_item_feature_i_embedded)
 
         batch_item_feature_embedded = torch.cat(batch_item_feature_embedded, -1)
@@ -118,15 +92,9 @@ class Generator(nn.Module):
         for i, dense_f in enumerate(self.item_dense_features):
             batch_dense_f = dense_f[item_id]
             dense_embedded = self.item_dense_Embeddings[i](batch_dense_f.float()) / torch.sum(batch_dense_f.float(), dim = 1, keepdim= True)
-            # if isnan(dense_embedded).numel() > 0:
-            #     print("nan at", i, "dense_embedded")
             dense_embeddings.append(dense_embedded)
 
         batch_item_feature_embedded = torch.cat([batch_item_feature_embedded] + dense_embeddings, dim=1)
-
-        # if isnan(batch_item_feature_embedded, "batch_item_feature_embedded").numel() > 0:
-        #     nan_indices = torch.where(torch.isnan(batch_item_feature_embedded))
-        #     print(nan_indices[1])
 
         return batch_item_feature_embedded
 
@@ -250,14 +218,7 @@ class Model(nn.Module):
         i2i_score = torch.mm(item1_embedded, item2_embedded.permute(1, 0)).sigmoid()
         i2i_score_false = torch.mm(item1_embedded, item_false_embedded.permute(1, 0)).sigmoid()
 
-        # if torch.isnan(i2i_score).any():
-        #     print("Found nan: i2i_score")
-        # if torch.isnan(i2i_score_false).any():
-        #     print("Found nan: i2i_score_false")
-
         loss = (mse_loss(i2i_score, torch.ones_like(i2i_score)) + mse_loss(i2i_score_false, torch.zeros_like(i2i_score_false))) / 2
-        # if torch.isnan(loss).any():
-        #     print("Found nan: loss")
 
         return loss
 
@@ -289,17 +250,13 @@ class Model(nn.Module):
             norm_all_score = (all_score - min_score) / scaling_factor
             norm_pos_score = (pos_score - min_score.squeeze()) / scaling_factor.squeeze()
 
-            # ssl_mi = (probs * torch.log(torch.exp(pos_score/self.ssl_temp) / torch.exp(adj_score/self.ssl_temp).sum(dim=1, keepdim=False))).mean()
             ssl_mi = (probs * torch.log(torch.exp(norm_pos_score/self.ssl_temp) / torch.exp(norm_all_score/self.ssl_temp).sum(dim=1, keepdim=False))).mean()
             if debug:
                 print("pos_score:", torch.max(pos_score), torch.min(pos_score))
                 print("all_score:", torch.max(max_score), torch.min(min_score))
                 print("norm_pos_score:", torch.max(norm_pos_score), torch.min(norm_pos_score))
                 print("ssl_mi:", ssl_mi)
-            # ssl_mi = (probs * torch.log(torch.exp(pos_score) / torch.exp(all_score).sum(dim=1, keepdim=False))).mean()
-            # print(torch.isinf(pos_score).any(), torch.isinf(all_score).any(), ssl_mi)
-            # print(torch.isnan(pos_score).any(), torch.isnan(all_score).any())
-            # print(pos_score, all_score, ssl_mi)
+
             return ssl_mi
 
         user_embeddings, item_embeddings = self.compute_embeddings()
@@ -423,7 +380,6 @@ class Model(nn.Module):
         all_embeddings = [cur_embedding]
 
         for i in range(self.L):
-            # cur_embedding = torch.mm(self.joint_adjacency_matrix_normal, cur_embedding)
             cur_embedding = torch.mm(self.joint_adjacency_matrix_normal_spatial, cur_embedding)
             all_embeddings.append(cur_embedding)
 

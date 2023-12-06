@@ -91,6 +91,13 @@ def collate_test_i2i(batch):
     return [item1, item2]
 
 
+def create_matrix_from_idx(num_items, index_list):
+    matrix = torch.zeros((len(index_list), num_items), dtype=torch.long)
+    for i, index in enumerate(index_list):
+        matrix[i, index] = 1
+    return matrix.numpy()
+
+
 
 def one_train(Data: load_data.Data, opt: argparse.Namespace):
     print(opt)
@@ -154,6 +161,8 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
 
     support_loader = DataLoader(i2i_pair, shuffle=True, batch_size=opt.batch_size, collate_fn=collate_test_i2i)  # edge generator?
 
+    print_metrics = False
+
     for epoch in range(start_epoch, opt.epoch):
         model.train()
 
@@ -191,10 +200,6 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
                 total_support_loss += support_loss.item()
                 total_query_loss += query_loss.item()
                 total_loss += loss.item()
-                # print(f"index: {index}, meta_train: {total_support_loss:.5f}, meta_test: {total_query_loss:.5f}, overall: {total_loss:.5f}")
-                # if torch.isnan(loss).any():
-                #     print("nan detected")
-                #     print(f"index: {index}, meta_train: {total_support_loss:.5f}, meta_test: {total_query_loss:.5f}, overall: {total_loss:.5f}")
 
                 optimizer.zero_grad()
                 # with torch.autograd.detect_anomaly():
@@ -204,11 +209,34 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
                 for i, emb in enumerate(embs):
                     emb_weight = emb.weight
                     nan_flags = torch.isnan(emb_weight)
-                    # if nan_flags.any():
-                    #     print("Found nan:", emb_weight.shape)
-                    #     nan_indices = torch.where(nan_flags)[0]
-                    #     print("nn indices:", nan_indices)
                 pbar.update(1)
+
+        if print_metrics:
+            model.eval()
+            NDCG = defaultdict(list)
+            RECALL = defaultdict(list)
+            MRR = defaultdict(list)
+            user_historical_mask = Data.user_historical_mask.to(device)
+            with tqdm(total=len(train_loader), desc="epoch"+str(epoch)) as pbar:
+                for i, (user_id, pos_item, _) in enumerate(train_loader):
+                    user_id = user_id.to(device)
+                    score = model.predict(user_id)
+                    score = torch.mul(user_historical_mask[user_id], score).cpu().detach().numpy()
+                    ground_truth = pos_item.detach().numpy()
+
+                    num_items = score.shape[1]
+                    gt_matrix = create_matrix_from_idx(num_items, ground_truth)
+
+                    for K in opt.K_list:
+                        ndcg, recall, mrr = metric.ranking_meansure_testset(score, gt_matrix, K, list(Data.trainSet_i.keys()))
+                        NDCG[K].append(ndcg)
+                        RECALL[K].append(recall)
+                        MRR[K].append(mrr)
+
+                    pbar.update(1)
+
+            K = opt.K_list[0]
+            print("top-{}: NDCG: {:.5f}, RECALL: {:.5f}, MRR: {:.5f}".format(K, np.mean(NDCG[K]), np.mean(RECALL[K]), np.mean(MRR[K])))
         print(f"Loss: meta_train: {total_support_loss:.5f}, meta_test: {total_query_loss:.5f}, overall: {total_loss:.5f}")
 
     last_checkpoint = {
