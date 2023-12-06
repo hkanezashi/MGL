@@ -23,6 +23,17 @@ def inverse_sigmoid(x, k):
     return s
 
 
+def isnan(values: torch.Tensor, name: str=""):
+    nan_flags = torch.isnan(values)
+    if nan_flags.any():
+        print("Found nan:", name, values.shape)
+        nan_indices = torch.where(nan_flags)[0]
+        print("nn indices:", nan_indices)
+        return torch.unique(nan_indices)
+    else:
+        return torch.zeros(0)
+
+
 class Generator(nn.Module):
     def __init__(self, user_num, item_num, item_feature_list, item_feature_matrix, dense_f_list_transforms, opt, device):
         super(Generator, self).__init__()
@@ -54,9 +65,16 @@ class Generator(nn.Module):
 
 
     def encode(self, item_id):
+        # if isnan(item_id).numel() > 0:
+        #     print("nan detected: item_id")
+
         batch_item_feature_embedded = self.embed_feature(item_id)
+        # if isnan(batch_item_feature_embedded).numel() > 0:
+        #     print("nan detected: batch_item_feature_embedded")
 
         batch_item_feature_encoded = self.encoder(batch_item_feature_embedded)
+        # if isnan(batch_item_feature_encoded).numel() > 0:
+        #     print("nan detected: batch_item_feature_encoded")
 
         return batch_item_feature_encoded
 
@@ -71,8 +89,26 @@ class Generator(nn.Module):
         for i, f in enumerate(self.item_feature_list):
             embedding_layer = self.item_Embeddings[i]
             batch_item_feature_i = batch_item_feature[:, i]
-            batch_item_feature_i_embedded = embedding_layer(batch_item_feature_i)
+            # if isnan(batch_item_feature_i, "batch_item_feature_i").numel() > 0:
+            #     print("nan at", i)
 
+            weight = embedding_layer.weight
+            # if isnan(weight, "embedding weight").numel() > 0:
+            #     nan_indices = torch.where(torch.isnan(weight))
+            #     print(nan_indices)
+
+            batch_item_feature_i_embedded = embedding_layer(batch_item_feature_i)
+            # nan_indices = isnan(batch_item_feature_i_embedded, "batch_item_feature_i_embedded")
+            # if nan_indices.numel() > 0:
+            #     print("values:", batch_item_feature_i_embedded)
+            #     print("item id:", item_id)
+            #     print("nan at", i)
+            #     print("feats:", batch_item_feature[nan_indices])
+            #     print(self.item_Embeddings)
+
+            #     print(weight.isnan())
+            #     nan_indices = torch.where(torch.isnan(weight))
+            #     print(nan_indices)
             batch_item_feature_embedded.append(batch_item_feature_i_embedded)
 
         batch_item_feature_embedded = torch.cat(batch_item_feature_embedded, -1)
@@ -81,9 +117,15 @@ class Generator(nn.Module):
         for i, dense_f in enumerate(self.item_dense_features):
             batch_dense_f = dense_f[item_id]
             dense_embedded = self.item_dense_Embeddings[i](batch_dense_f.float()) / torch.sum(batch_dense_f.float(), dim = 1, keepdim= True)
+            # if isnan(dense_embedded).numel() > 0:
+            #     print("nan at", i, "dense_embedded")
             dense_embeddings.append(dense_embedded)
 
         batch_item_feature_embedded = torch.cat([batch_item_feature_embedded] + dense_embeddings, dim=1)
+
+        # if isnan(batch_item_feature_embedded, "batch_item_feature_embedded").numel() > 0:
+        #     nan_indices = torch.where(torch.isnan(batch_item_feature_embedded))
+        #     print(nan_indices[1])
 
         return batch_item_feature_embedded
 
@@ -190,7 +232,9 @@ class Model(nn.Module):
 
 
     def i2i(self, item1, item2):
-
+        """Compute the loss function for training the meta edge generator
+        See equation 8 in the original MGL paper (Section 4.1)
+        """
         mse_loss = nn.MSELoss()
         item1_embedded = self.generator.encode(item1)
         item2_embedded = self.generator.encode(item2)
@@ -205,14 +249,21 @@ class Model(nn.Module):
         i2i_score = torch.mm(item1_embedded, item2_embedded.permute(1, 0)).sigmoid()
         i2i_score_false = torch.mm(item1_embedded, item_false_embedded.permute(1, 0)).sigmoid()
 
+        # if torch.isnan(i2i_score).any():
+        #     print("Found nan: i2i_score")
+        # if torch.isnan(i2i_score_false).any():
+        #     print("Found nan: i2i_score_false")
+
         loss = (mse_loss(i2i_score, torch.ones_like(i2i_score)) + mse_loss(i2i_score_false, torch.zeros_like(i2i_score_false))) / 2
+        # if torch.isnan(loss).any():
+        #     print("Found nan: loss")
 
         return loss
 
 
     def reg(self, pos_item):
         """Compute popularity-aware contrasctive loss
-        See equation 10 in the origihal MGL paper
+        See equation 10 in the origihal MGL paper (Section 4.2)
         """
         pos_item_encoded = self.generator.encode(pos_item)
         pos_item_decoded = self.generator.decode(pos_item_encoded)
@@ -279,6 +330,9 @@ class Model(nn.Module):
 
 
     def q_forward(self, user_id, pos_item, neg_item, fast_weights):
+        """Compute loss on the meta-test
+        See equation 16 in the original MGL paper (Section 4.4)
+        """
         row_index, colomn_index, joint_enhanced_value = self.q_link_predict(self.itemDegrees, self.top_rate, fast_weights)
         indice = torch.cat([row_index, colomn_index], dim=0).to(self.device)
 

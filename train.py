@@ -10,6 +10,8 @@ from model import Model
 import load_data
 import metric
 
+# torch.autograd.set_detect_anomaly(True)
+
 
 def get_config() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -72,10 +74,8 @@ def my_collate_train(batch):
 def my_collate_test(batch):
     user_id = [item[0] for item in batch]
     test_item = [item[1] for item in batch]
-    # print("test item shape:", test_item[0].shape)
 
     user_id = torch.LongTensor(user_id)
-    # test_item = torch.LongTensor(test_item)
     test_item = torch.stack(test_item)
 
     # print("test batch shape:", user_id.shape, test_item.shape)
@@ -153,7 +153,7 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
     # directory = directory_name_generate(model, opt, "no early stop")
     model = model.to(device)
 
-    support_loader = DataLoader(i2i_pair, shuffle=True, batch_size=opt.batch_size, collate_fn=collate_test_i2i)
+    support_loader = DataLoader(i2i_pair, shuffle=True, batch_size=opt.batch_size, collate_fn=collate_test_i2i)  # edge generator?
 
     for epoch in range(start_epoch, opt.epoch):
         model.train()
@@ -163,6 +163,10 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
         support_iter = iter(support_loader)
 
         with tqdm(total=len(train_loader), desc="epoch"+str(epoch)) as pbar:
+            total_support_loss = 0.0
+            total_query_loss = 0.0
+            total_loss = 0.0
+
             for index, (user_id, pos_item, neg_item) in enumerate(train_loader):
 
                 user_id = user_id.to(device)
@@ -173,7 +177,7 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
                 item1 = item1.to(device)
                 item2 = item2.to(device)
 
-                support_loss = model.i2i(item1, item2) + opt.reg_lambda * model.reg(item1)
+                support_loss = model.i2i(item1, item2) + opt.reg_lambda * model.reg(item1)  # Loss function of the meta edge generator (Equation 15)
 
                 weight_for_local_update = list(model.generator.encoder.state_dict().values())
 
@@ -184,12 +188,29 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
 
                 query_loss = model.q_forward(user_id, pos_item, neg_item, fast_weights)
 
-                loss = query_loss + opt.beta * support_loss
+                loss = query_loss + opt.beta * support_loss  # Final objective (Equation 17)
+                total_support_loss += support_loss.item()
+                total_query_loss += query_loss.item()
+                total_loss += loss.item()
+                # print(f"index: {index}, meta_train: {total_support_loss:.5f}, meta_test: {total_query_loss:.5f}, overall: {total_loss:.5f}")
+                # if torch.isnan(loss).any():
+                #     print("nan detected")
+                #     print(f"index: {index}, meta_train: {total_support_loss:.5f}, meta_test: {total_query_loss:.5f}, overall: {total_loss:.5f}")
 
                 optimizer.zero_grad()
+                # with torch.autograd.detect_anomaly():
                 loss.backward()
                 optimizer.step()
+                embs = model.generator.item_Embeddings
+                for i, emb in enumerate(embs):
+                    emb_weight = emb.weight
+                    nan_flags = torch.isnan(emb_weight)
+                    # if nan_flags.any():
+                    #     print("Found nan:", emb_weight.shape)
+                    #     nan_indices = torch.where(nan_flags)[0]
+                    #     print("nn indices:", nan_indices)
                 pbar.update(1)
+        print(f"Loss: meta_train: {total_support_loss:.5f}, meta_test: {total_query_loss:.5f}, overall: {total_loss:.5f}")
 
     last_checkpoint = {
         'sd': model.state_dict(),
@@ -221,8 +242,6 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
     with tqdm(total=len(test_loader), desc="predicting") as pbar:
         for i, (user_id, pos_item) in enumerate(test_loader):
             user_id = user_id.to(device)
-            # pos_item (uuu * item_num)
-            # uuu * item_num
             score = model.predict(user_id)
             score = torch.mul(user_historical_mask[user_id], score).cpu().detach().numpy()
             ground_truth = pos_item.detach().numpy()
