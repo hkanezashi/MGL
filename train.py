@@ -40,10 +40,10 @@ def get_config() -> argparse.Namespace:
     parser.add_argument("--link_topk", type=int, default=10)
 
     parser.add_argument("--reg_lambda", type=float, default=0.02)
-    parser.add_argument("--top_rate", type=float, default=0.1)
+    parser.add_argument("--top_rate", type=float, default=0.1, help="Proportion of 'top' items")
     parser.add_argument("--convergence", type=float, default=40)
     parser.add_argument("--seperate_rate", type=float, default=0.2)
-    parser.add_argument("--local_lr", type=float, default=0.01)
+    parser.add_argument("--local_lr", type=float, default=0.01, help="")
     parser.add_argument("--beta", type=float, default=0.1)
 
     parser.add_argument("--lr", type=float, default=0.001)
@@ -115,7 +115,7 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
 
     interact_matrix = torch.sparse_coo_tensor(index, value, (Data.user_num, Data.item_num)).to(device)
 
-    i2i = torch.sparse.mm(interact_matrix.t(), interact_matrix)
+    i2i = torch.sparse.mm(interact_matrix.t(), interact_matrix)  # Item co-occurrance matrix (Equation 6)
 
     def sparse_where(A):
         A = A.coalesce()
@@ -124,21 +124,27 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
         A_values = torch.where(A_values > 1, A_values.new_ones(A_values.shape), A_values)
         return torch.sparse_coo_tensor(A_indices, A_values, A.shape).to(A.device)
 
-    i2i = sparse_where(i2i)
+    i2i = sparse_where(i2i)  # Item co-occurrance matrix (Equation 6)
 
-    def get_0_1_array(item_num,rate=0.2):
-        zeros_num = int(item_num * rate)
+    def get_0_1_array(item_num, mask_rate=0.2):
+        """Generate a random masking matrix on the item co-occurrence matrix.
+        Args:
+            item_num (int): Number of items
+            rate (float, optional): Ratio of zero (masking) items. Defaults to 0.2.
+        Returns:
+            Torch sparse matrix
+        """
+        zeros_num = int(item_num * mask_rate)
         new_array = np.ones(item_num * item_num)
         new_array[:zeros_num] = 0
         np.random.shuffle(new_array)
-        # re_array = new_array.reshape(item_num * item_num)
         re_array = new_array.reshape(item_num, item_num)  # 2D-matrix
         re_array = torch.from_numpy(re_array).to_sparse().to(device)
         return re_array
 
-
-    mask = get_0_1_array(Data.item_num)
-    i2i = mask * i2i * mask.t()
+    mask_rate = 1.0 - opt.top_rate
+    mask = get_0_1_array(Data.item_num, mask_rate)
+    i2i = mask * i2i * mask.t()  # Random masking of co-occurrance matrix (Equation 7)
 
     i2i = i2i.coalesce()
 
@@ -159,7 +165,7 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
     # directory = directory_name_generate(model, opt, "no early stop")
     model = model.to(device)
 
-    support_loader = DataLoader(i2i_pair, shuffle=True, batch_size=opt.batch_size, collate_fn=collate_test_i2i)  # edge generator?
+    support_loader = DataLoader(i2i_pair, shuffle=True, batch_size=opt.batch_size, collate_fn=collate_test_i2i)  # Dataset of edge generator
 
     print_metrics = False
 
@@ -185,30 +191,29 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
                 item1 = item1.to(device)
                 item2 = item2.to(device)
 
-                support_loss = model.i2i(item1, item2) + opt.reg_lambda * model.reg(item1)  # Loss function of the meta edge generator (Equation 15)
+                ## Meta-Train (Algorithm 1, Line 3)
+                support_loss = model.i2i(item1, item2) + opt.reg_lambda * model.reg(item1)  # Compute loss function of the meta edge generator (Equation 15)
 
+                ## Update parameter (Algorithm 1, Line 4)
                 weight_for_local_update = list(model.generator.encoder.state_dict().values())
-
                 grad = torch.autograd.grad(support_loss, model.generator.encoder.parameters(), create_graph=True, allow_unused=True)
                 fast_weights = []
                 for i, weight in enumerate(weight_for_local_update):
                     fast_weights.append(weight - opt.local_lr * grad[i])
 
-                query_loss = model.q_forward(user_id, pos_item, neg_item, fast_weights)
+                ## Meta-test (Algorithm 1, Line 5)
+                query_loss = model.q_forward(user_id, pos_item, neg_item, fast_weights)  # L_Rec
 
+                ## Meta-optimization (Algorithm 1, Line 6)
                 loss = query_loss + opt.beta * support_loss  # Final objective (Equation 17)
+
                 total_support_loss += support_loss.item()
                 total_query_loss += query_loss.item()
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
-                # with torch.autograd.detect_anomaly():
                 loss.backward()
                 optimizer.step()
-                embs = model.generator.item_Embeddings
-                for i, emb in enumerate(embs):
-                    emb_weight = emb.weight
-                    nan_flags = torch.isnan(emb_weight)
                 pbar.update(1)
 
         if print_metrics:

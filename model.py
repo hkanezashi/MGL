@@ -220,7 +220,7 @@ class Model(nn.Module):
 
         loss = (mse_loss(i2i_score, torch.ones_like(i2i_score)) + mse_loss(i2i_score_false, torch.zeros_like(i2i_score_false))) / 2
 
-        return loss
+        return loss  # L_GL
 
 
     def reg(self, pos_item):
@@ -262,18 +262,16 @@ class Model(nn.Module):
         user_embeddings, item_embeddings = self.compute_embeddings()
         reg_loss = ssl_compute(pos_item_decoded, item_embeddings[pos_item], probs)
 
-        return reg_loss
+        return reg_loss  # L_PCL
 
 
     def q_link_predict(self, itemDegrees, top_rate, fast_weights):
-
         sorted_item_degrees = sorted(itemDegrees.items(), key=lambda x: x[1])
         item_list_sorted, d_item = zip(*sorted_item_degrees)
         item_tail = torch.tensor(item_list_sorted).to(self.device)
 
         top_length = int(self.item_num * top_rate)
-        item_top = torch.tensor(item_list_sorted[-top_length:]).to(self.device)
-
+        item_top = torch.tensor(item_list_sorted[-top_length:]).to(self.device)  # head items
 
         encoder_0_weight = fast_weights[0]
         encoder_0_bias = fast_weights[1]
@@ -281,7 +279,7 @@ class Model(nn.Module):
         encoder_2_bias = fast_weights[3]
 
         top_item_feature = self.generator.embed_feature(item_top)
-        tail_item_feature = self.generator.embed_feature(item_tail)
+        tail_item_feature = self.generator.embed_feature(item_tail)  # tail (all) items
 
         top_item_hidden = torch.mm(top_item_feature, encoder_0_weight.t()) + encoder_0_bias
         top_item_embedded = torch.mm(top_item_hidden, encoder_2_weight.t()) + encoder_2_bias
@@ -290,8 +288,7 @@ class Model(nn.Module):
         tail_item_embedded = torch.mm(tail_item_hidden, encoder_2_weight.t()) + encoder_2_bias
 
         i2i_score = torch.mm(tail_item_embedded, top_item_embedded.permute(1, 0))
-
-        i2i_score_masked, indices = i2i_score.topk(self.link_topk, dim= -1)
+        i2i_score_masked, indices = i2i_score.topk(self.link_topk, dim= -1)  # Threshold interception with top-k simiarities (Equation 13)
         i2i_score_masked = i2i_score_masked.sigmoid()
 
         tail_item_degree = torch.sum(i2i_score_masked, dim=1)
@@ -299,31 +296,31 @@ class Model(nn.Module):
         tail_item_degree = torch.pow(tail_item_degree + 1, -1).unsqueeze(1).expand_as(i2i_score_masked).reshape(-1)
         top_item_degree = torch.pow(top_item_degree + 1, -1).unsqueeze(0).expand_as(i2i_score_masked).reshape(-1)
 
-
         tail_item_index = item_tail.unsqueeze(1).expand_as(i2i_score).gather(1, indices).reshape(-1)
         top_item_index = item_top.unsqueeze(0).expand_as(i2i_score).gather(1, indices).reshape(-1)
         enhanced_value = i2i_score_masked.reshape(-1)
 
         row_index = (tail_item_index+self.user_num).unsqueeze(0)
-        colomn_index = (top_item_index+self.user_num).unsqueeze(0)
+        column_index = (top_item_index+self.user_num).unsqueeze(0)
         joint_enhanced_value = enhanced_value * tail_item_degree
 
-        return row_index, colomn_index, joint_enhanced_value
+        return row_index, column_index, joint_enhanced_value  # Enhanced graph A_F
 
 
     def q_forward(self, user_id, pos_item, neg_item, fast_weights):
         """Compute loss on the meta-test
         See equation 16 in the original MGL paper (Section 4.4)
         """
-        row_index, colomn_index, joint_enhanced_value = self.q_link_predict(self.itemDegrees, self.top_rate, fast_weights)
-        indice = torch.cat([row_index, colomn_index], dim=0).to(self.device)
+        row_index, column_index, joint_enhanced_value = self.q_link_predict(self.itemDegrees, self.top_rate, fast_weights)
+        indice = torch.cat([row_index, column_index], dim=0).to(self.device)
 
-        cur_embedding = torch.cat([self.user_id_Embeddings.weight, self.item_id_Embeddings.weight], dim=0)
+        cur_embedding = torch.cat([self.user_id_Embeddings.weight, self.item_id_Embeddings.weight], dim=0)  # E(l) = [E_user(l), E_item(l)] = GCN(E(l-1), G) (equation 9)
 
         all_embeddings = [cur_embedding]
         enhance_weight = torch.from_numpy(inverse_sigmoid(self.item_degree_numpy, self.convergence))
         enhance_weight = torch.cat([torch.zeros(self.user_num), enhance_weight], dim=-1).to(self.device).float()
 
+        # GCN forward: E(l) = GCN(E(l-1), G)
         for i in range(self.L):
             cur_embedding_ori = torch.mm(self.joint_adjacency_matrix_normal_spatial, cur_embedding)
             cur_embedding_enhanced = torch_sparse.spmm(indice, joint_enhanced_value, self.user_num + self.item_num, self.user_num + self.item_num, cur_embedding)

@@ -7,12 +7,6 @@ from rectorch.metrics import Metrics
 
 
 def ranking_meansure_testset(pred_scores, ground_truth, k, test_item):
-    # test_item (list)
-    # user_num * item_num (score)
-    # user_num * item_num (1/0)
-
-    # user_num * test_item_num (score)
-    # user_num * test_item_num (1/0)
     pred_scores = pred_scores[:, test_item]
     ground_truth = ground_truth[:, test_item]
 
