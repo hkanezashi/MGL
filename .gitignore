@@ -5,3 +5,4 @@ model.tar
 dataset/
 !book_crossing
 *.log
+.DS_Store
