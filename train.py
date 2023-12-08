@@ -21,36 +21,35 @@ def get_config() -> argparse.Namespace:
     # test_set/cv/split
     parser.add_argument("--load_mode", type=str, default='test_set')
 
-    parser.add_argument("--implcit_bottom", type=int, default=None)
-    parser.add_argument("--cross_validate", type=int, default=None)
-    parser.add_argument("--split", type=float, default=None)
-    parser.add_argument("--user_fre_threshold", type=int, default=None)
-    parser.add_argument("--item_fre_threshold", type=int, default=None)
+    parser.add_argument("--implcit_bottom", type=int, default=None, help="Minimum score threshold (for preprocessing)")
+    # parser.add_argument("--cross_validate", type=int, default=None)
+    # parser.add_argument("--split", type=float, default=None)
+    parser.add_argument("--user_fre_threshold", type=int, default=None, help="Minimum user degree threshold (for preprocessing)")
+    parser.add_argument("--item_fre_threshold", type=int, default=None, help="Minimum item degree threshold (for preprocessing)")
 
     parser.add_argument("--loadFilename", type=str, default=None)
 
-    parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--epoch", type=int, default=100)
+    parser.add_argument("--batch_size", type=int, default=128, help="Training batch size")
+    parser.add_argument("--epoch", type=int, default=100, help="Number of epochs")
 
-    parser.add_argument("--embedding_size", type=int, default=8)
-    parser.add_argument("--id_embedding_size", type=int, default=64)
-    parser.add_argument("--dense_embedding_dim", type=int, default=16)
+    parser.add_argument("--embedding_size", type=int, default=8, help="Item embedding size")
+    parser.add_argument("--id_embedding_size", type=int, default=64, help="User/item ID embedding size")
+    parser.add_argument("--dense_embedding_dim", type=int, default=16, help="Dense item embedding size")
 
-    parser.add_argument("--L", type=int, default=3)
+    parser.add_argument("--L", type=int, default=3, help="Number of GCN layers")
+    parser.add_argument("--link_topk", type=int, default=10, help="Number of similar items for item-item similarity matrix")
 
-    parser.add_argument("--link_topk", type=int, default=10)
-
-    parser.add_argument("--reg_lambda", type=float, default=0.02)
+    parser.add_argument("--reg_lambda", type=float, default=0.02, help="Weight of popularity aware contrastive learning")
     parser.add_argument("--top_rate", type=float, default=0.1, help="Proportion of 'top' items")
-    parser.add_argument("--convergence", type=float, default=40)
-    parser.add_argument("--seperate_rate", type=float, default=0.2)
-    parser.add_argument("--local_lr", type=float, default=0.01, help="")
-    parser.add_argument("--beta", type=float, default=0.1)
+    parser.add_argument("--convergence", type=float, default=40, help="Convergence rate of popularity coefficient")
+    parser.add_argument("--seperate_rate", type=float, default=0.2, help="Ratio of head/tail items")
+    parser.add_argument("--alpha", type=float, default=0.01, help="Learning rate of meta-training (alpha)")
+    parser.add_argument("--beta", type=float, default=0.1, help="Weight of meta-training loss (beta)")
 
-    parser.add_argument("--lr", type=float, default=0.001)
-    parser.add_argument("--weight_decay", type=float, default=0.01)
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate of downstream task training")
+    # parser.add_argument("--weight_decay", type=float, default=0.01)  # unused
 
-    parser.add_argument("--K_list", type=int, nargs='+', default=[10, 20, 50])
+    parser.add_argument("--K_list", type=int, nargs='+', default=[10, 20, 50], help="Top-k list for metrics")
     parser.add_argument("--ssl_temp", type=float, default=1, help="Teperature in softmax")
     parser.add_argument("--gpu", type=int, default=0, help="GPU device ID if available")
 
@@ -104,7 +103,7 @@ def create_matrix_from_idx(num_items, index_list):
 def one_train(Data: load_data.Data, opt: argparse.Namespace):
     logger = logging.getLogger("MGL")
     logger.setLevel(logging.INFO)
-    log_file = f"{opt.dataset_name}-e{opt.epoch}-b{opt.batch_size}.log"
+    log_file = f"{opt.dataset_name}-epoch{opt.epoch}-batch{opt.batch_size}-alpha{opt.alpha}-beta{opt.beta}.log"
     f_handler = logging.FileHandler(log_file)
     f_formatter = logging.Formatter('%(levelname)s  %(asctime)s  [%(name)s] %(message)s')
     f_handler.setFormatter(f_formatter)
@@ -116,7 +115,7 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
     s_formatter = logging.Formatter('%(message)s')
     logger.addHandler(s_handler)
 
-    print(opt)
+    logger.info(str(opt))
     logger.info('Building dataloader >>>>>>>>>>>>>>>>>>>')
 
     test_dataset = Data.test_dataset
@@ -218,7 +217,7 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
                 grad = torch.autograd.grad(support_loss, model.generator.encoder.parameters(), create_graph=True, allow_unused=True)
                 fast_weights = []
                 for i, weight in enumerate(weight_for_local_update):
-                    fast_weights.append(weight - opt.local_lr * grad[i])
+                    fast_weights.append(weight - opt.alpha * grad[i])
 
                 ## Meta-test (Algorithm 1, Line 5)
                 query_loss = model.q_forward(user_id, pos_item, neg_item, fast_weights)  # L_Rec

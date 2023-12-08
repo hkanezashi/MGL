@@ -122,8 +122,8 @@ class Model(nn.Module):
 
         self.device = device
 
-        self.L = opt.L
-        self.link_topk = opt.link_topk
+        self.L = opt.L  # Number of GCN layers
+        self.link_topk = opt.link_topk  # Number of similar items for item-item similarity matrix
 
         self.userDegrees = Data.userDegrees
         self.itemDegrees = Data.itemDegrees
