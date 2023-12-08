@@ -134,8 +134,9 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
         Returns:
             Torch sparse matrix
         """
-        zeros_num = int(item_num * mask_rate)
-        new_array = np.ones(item_num * item_num)
+        num_elems = item_num * item_num
+        zeros_num = int(num_elems * mask_rate)
+        new_array = np.ones(num_elems)
         new_array[:zeros_num] = 0
         np.random.shuffle(new_array)
         re_array = new_array.reshape(item_num, item_num)  # 2D-matrix
