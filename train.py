@@ -261,9 +261,11 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
     model.eval()
     user_historical_mask = Data.user_historical_mask.to(device)
 
-    NDCG = defaultdict(list)
+    PRECISION = defaultdict(list)
     RECALL = defaultdict(list)
     MRR = defaultdict(list)
+    NDCG = defaultdict(list)
+    HR = defaultdict(list)
 
     head_NDCG = defaultdict(list)
     head_RECALL = defaultdict(list)
@@ -280,11 +282,14 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
             ground_truth = pos_item.detach().numpy()
 
             for K in opt.K_list:
-                ndcg, recall, mrr = metric.ranking_meansure_testset(score, ground_truth, K, list(Data.testSet_i.keys()))
+                precision, recall, mrr, ndcg, hr = metric.ranking_meansure_testset(score, ground_truth, K, list(Data.testSet_i.keys()))
                 head_ndcg, head_recall, tail_ndcg, tail_recall, body_ndcg, body_recall = metric.ranking_meansure_degree_testset(score, ground_truth, K, Data.itemDegrees, opt.seperate_rate, list(Data.testSet_i.keys()))
-                NDCG[K].append(ndcg)
+
+                PRECISION[K].append(precision)
                 RECALL[K].append(recall)
                 MRR[K].append(mrr)
+                NDCG[K].append(ndcg)
+                HR[K].append(hr)
 
                 head_NDCG[K].append(head_ndcg)
                 head_RECALL[K].append(head_recall)
@@ -298,9 +303,12 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
     print(opt)
     print(model.name)
     for K in opt.K_list:
-        print("NDCG@{}: {:.5f}".format(K, np.mean(NDCG[K])))
+        print("\n---- Metrics@{} ----".format(K))
+        print("PRECISION@{}: {:.5f}".format(K, np.mean(PRECISION[K])))
         print("RECALL@{}: {:.5f}".format(K, np.mean(RECALL[K])))
         print("MRR@{}: {:.5f}".format(K, np.mean(MRR[K])))
+        print("NDCG@{}: {:.5f}".format(K, np.mean(NDCG[K])))
+        print("HR@{}: {:.5f}".format(K, np.mean(HR[K])))
         print('\r\r')
         print("head_NDCG@{}: {:.5f}".format(K, np.mean(head_NDCG[K])))
         print("head_RECALL@{}: {:.5f}".format(K, np.mean(head_RECALL[K])))
