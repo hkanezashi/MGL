@@ -5,6 +5,7 @@ from tqdm import tqdm
 import numpy as np
 from collections import defaultdict
 import argparse
+import logging
 
 from model import Model
 import load_data
@@ -51,6 +52,7 @@ def get_config() -> argparse.Namespace:
 
     parser.add_argument("--K_list", type=int, nargs='+', default=[10, 20, 50])
     parser.add_argument("--ssl_temp", type=float, default=1, help="Teperature in softmax")
+    parser.add_argument("--gpu", type=int, default=0, help="GPU device ID if available")
 
     opt = parser.parse_args()
     print(type(opt))
@@ -100,13 +102,29 @@ def create_matrix_from_idx(num_items, index_list):
 
 
 def one_train(Data: load_data.Data, opt: argparse.Namespace):
+    logger = logging.getLogger("MGL")
+    logger.setLevel(logging.INFO)
+    log_file = f"{opt.dataset_name}-e{opt.epoch}-b{opt.batch_size}.log"
+    f_handler = logging.FileHandler(log_file)
+    f_formatter = logging.Formatter('%(levelname)s  %(asctime)s  [%(name)s] %(message)s')
+    f_handler.setFormatter(f_formatter)
+    f_handler.setLevel(logging.INFO)
+    logger.addHandler(f_handler)
+
+    s_handler = logging.StreamHandler()
+    s_handler.setLevel(logging.INFO)
+    s_formatter = logging.Formatter('%(message)s')
+    logger.addHandler(s_handler)
+
     print(opt)
-    print('Building dataloader >>>>>>>>>>>>>>>>>>>')
+    logger.info('Building dataloader >>>>>>>>>>>>>>>>>>>')
 
     test_dataset = Data.test_dataset
     test_loader = DataLoader(test_dataset, shuffle=False, batch_size=opt.batch_size, collate_fn=my_collate_test)
 
-    device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device_id = opt.gpu
+    device_name = f"cuda:{device_id}" if torch.cuda.is_available() else "cpu"
+    logger.info(f"Device: {device_name}")
     device = torch.device(device_name)
 
     print(device)
@@ -154,14 +172,14 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
     i2i_pair = list(zip(item1, item2))
 
 
-    print("building model >>>>>>>>>>>>>>>")
+    logger.info("building model >>>>>>>>>>>>>>>")
     model = Model(Data, opt, device)
 
 
-    print('Building optimizers >>>>>>>')
+    logger.info('Building optimizers >>>>>>>')
     optimizer = optim.Adam(model.parameters(), lr=opt.lr)
 
-    print('Start training...')
+    logger.info('Start training...')
     start_epoch = 0
     # directory = directory_name_generate(model, opt, "no early stop")
     model = model.to(device)
@@ -242,8 +260,8 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
                     pbar.update(1)
 
             K = opt.K_list[0]
-            print("top-{}: NDCG: {:.5f}, RECALL: {:.5f}, MRR: {:.5f}".format(K, np.mean(NDCG[K]), np.mean(RECALL[K]), np.mean(MRR[K])))
-        print(f"Loss: meta_train: {total_support_loss:.5f}, meta_test: {total_query_loss:.5f}, overall: {total_loss:.5f}")
+            logger.info("top-{}: NDCG: {:.5f}, RECALL: {:.5f}, MRR: {:.5f}".format(K, np.mean(NDCG[K]), np.mean(RECALL[K]), np.mean(MRR[K])))
+        logger.info(f"Loss: meta_train: {total_support_loss:.5f}, meta_test: {total_query_loss:.5f}, overall: {total_loss:.5f}")
 
     last_checkpoint = {
         'sd': model.state_dict(),
@@ -301,23 +319,24 @@ def one_train(Data: load_data.Data, opt: argparse.Namespace):
             pbar.update(1)
 
     print(opt)
-    print(model.name)
+    logger.info(model.name)
     for K in opt.K_list:
-        print("\n---- Metrics@{} ----".format(K))
-        print("PRECISION@{}: {:.5f}".format(K, np.mean(PRECISION[K])))
-        print("RECALL@{}: {:.5f}".format(K, np.mean(RECALL[K])))
-        print("MRR@{}: {:.5f}".format(K, np.mean(MRR[K])))
-        print("NDCG@{}: {:.5f}".format(K, np.mean(NDCG[K])))
-        print("HR@{}: {:.5f}".format(K, np.mean(HR[K])))
-        print('\r\r')
-        print("head_NDCG@{}: {:.5f}".format(K, np.mean(head_NDCG[K])))
-        print("head_RECALL@{}: {:.5f}".format(K, np.mean(head_RECALL[K])))
-        print('\r\r')
-        print("tail_NDCG@{}: {:.5f}".format(K, np.mean(tail_NDCG[K])))
-        print("tail_RECALL@{}: {:.5f}".format(K, np.mean(tail_RECALL[K])))
-        print('\r\r')
-        print("body_NDCG@{}: {:.5f}".format(K, np.mean(body_NDCG[K])))
-        print("body_RECALL@{}: {:.5f}".format(K, np.mean(body_RECALL[K])))
+        logger.info("---- Metrics@{} ----".format(K))
+        logger.info("PRECISION@{}: {:.5f}".format(K, np.mean(PRECISION[K])))
+        logger.info("RECALL@{}: {:.5f}".format(K, np.mean(RECALL[K])))
+        logger.info("MRR@{}: {:.5f}".format(K, np.mean(MRR[K])))
+        logger.info("NDCG@{}: {:.5f}".format(K, np.mean(NDCG[K])))
+        logger.info("HR@{}: {:.5f}".format(K, np.mean(HR[K])))
+        logger.info('\n')
+        logger.info("head_NDCG@{}: {:.5f}".format(K, np.mean(head_NDCG[K])))
+        logger.info("head_RECALL@{}: {:.5f}".format(K, np.mean(head_RECALL[K])))
+        logger.info('\n')
+        logger.info("tail_NDCG@{}: {:.5f}".format(K, np.mean(tail_NDCG[K])))
+        logger.info("tail_RECALL@{}: {:.5f}".format(K, np.mean(tail_RECALL[K])))
+        logger.info('\n')
+        logger.info("body_NDCG@{}: {:.5f}".format(K, np.mean(body_NDCG[K])))
+        logger.info("body_RECALL@{}: {:.5f}".format(K, np.mean(body_RECALL[K])))
+        logger.info("\n")
 
 
 opt: argparse.Namespace = get_config()

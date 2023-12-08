@@ -4,3 +4,4 @@ __pycache__
 model.tar
 dataset/
 !book_crossing
+*.log
